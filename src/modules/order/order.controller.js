@@ -78,14 +78,37 @@ export const createOrder = asyncHandler(async (req, res, next) => {
   };
 
   const invoiceBuffer = await createInvoice(invoice);
-  const invoicePath = `uploads/invoices/invoice_${order._id}.pdf`;
 
-  await fs.promises.writeFile(invoicePath, invoiceBuffer);
+  const uploadInvoiceToCloudinary = (buffer, orderId, callback) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder: `Ecommerce/Orders/`,
+        public_id: `order_${orderId}`
+      },
+      callback
+    );
 
-  const cloudinaryResponse = await cloudinary.uploader.upload(invoicePath, {
-    folder: `Ecommerce/Orders/`,
-    public_id: `order_${order._id}`
-  });
+    // Convert buffer to stream and pipe it
+    stream.end(buffer);
+  };
+
+  let cloudinaryResponse;
+  try {
+    cloudinaryResponse = await new Promise((resolve, reject) => {
+      uploadInvoiceToCloudinary(invoiceBuffer, order._id, (error, result) => {
+        if (error) {
+          return reject(new AppError('Failed to upload invoice to Cloudinary', 500));
+        }
+        resolve(result);
+      });
+    });
+
+    if (!cloudinaryResponse || !cloudinaryResponse.secure_url) {
+      throw new AppError('Failed to retrieve Cloudinary response', 500);
+    }
+  } catch (error) {
+    return next(error);
+  }
 
   const orderReceipt = new OrderReceipt({
     order: order._id,
@@ -99,8 +122,7 @@ export const createOrder = asyncHandler(async (req, res, next) => {
 
   await orderReceipt.save();
 
-
-  const attachment = [{ path: invoicePath, contentType: "application/pdf" }]
+  const attachment = [{ content: invoiceBuffer, filename: `invoice_${order._id}.pdf`, contentType: "application/pdf" }];
   try {
     const emailSubject = 'Order Details';
     const emailHtml = `<p>Your order has been placed successfully. Please find the details attached.</p>`;
@@ -109,8 +131,6 @@ export const createOrder = asyncHandler(async (req, res, next) => {
     console.error('Email send error:', error);
     return next(new AppError('Failed to send order details. Please try again later.', 500));
   }
-
-  await fs.promises.unlink(invoicePath);
 
   await Cart.findOneAndDelete({ user: req.user.id });
 
@@ -121,7 +141,6 @@ export const createOrder = asyncHandler(async (req, res, next) => {
     receiptUrl: orderReceipt.receiptPdfUrl
   });
 });
-
 
 
 
