@@ -5,75 +5,129 @@ import Product from './../../../db/models/product/product.mode.js';
 import Coupon from './../../../db/models/coupon/coupon.model.js';
 import { asyncHandler } from './../../utils/asyncHandler.js';
 import { AppError } from './../../utils/errorClass.js';
+import OrderReceipt from './../../../db/models/order/orderReceipt.model.js';
+import cloudinary from "../../utils/cloudinary.js";
 import dotenv from 'dotenv';
+import User from './../../../db/models/user/user.model.js';
+import { createInvoice } from './../../utils/pdf.js';
+import fs from 'fs';
+import { sendEmail } from './../../service/sendEmail.js';
 dotenv.config();
-
 
 const stripe = new Stripe(process.env.STRIPE_SECRET);
 
 //* ============================= Create Order ================================
 
-export const createCashOrder = asyncHandler(async (req, res, next) => {
+export const createOrder = asyncHandler(async (req, res, next) => {
+  const { address } = req.body;
 
-  const { address } = req.body
-  const cart = await Cart.findOne({ user: req.user.id })
-  if (!cart) return next(new AppError('Cart is empty', 400))
+  const user = await User.findById(req.user.id);
+  const cart = await Cart.findOne({ user: req.user.id });
 
-  let discount = cart.discount || ""
-  let totalPriceAfterDiscount = cart.totalPriceAfterDiscount || cart.totalPrice
+  if (!cart) return next(new AppError("Cart is empty", 400));
+  if (!user) return next(new AppError("User not found", 404));
+
+  const discount = cart.discount || 0;
+  const totalPriceAfterDiscount = cart.totalPriceAfterDiscount || cart.totalPrice;
 
   const order = new Order({
     user: req.user.id,
     products: cart.products,
-    address: address || req.user.addresses[0],
+    address: address || user.addresses[0],
     totalPrice: cart.totalPrice,
-    discount: discount,
-    totalPriceAfterDiscount: totalPriceAfterDiscount,
+    discount,
+    totalPriceAfterDiscount,
     coupon: cart.coupon,
     isPlaced: true
-  })
-  await order.save()
-  req.data = {
-    model: Order,
-    id: order._id
-  }
+  });
 
-  for (const product of order.products) {
-    await Product.findByIdAndUpdate(product.productId, { $inc: { stock: -product.quantity } })
+  await order.save();
 
-  }
+  await Promise.all(order.products.map(async (product) => {
+    await Product.findByIdAndUpdate(product.productId, {
+      $inc: { stock: -product.quantity }
+    });
+  }));
+
   if (cart.coupon) {
-    await Coupon.findOneAndUpdate({ code: cart.coupon }, { $push: { usedBy: req.user.id } })
+    await Coupon.findOneAndUpdate(
+      { code: cart.coupon },
+      { $push: { usedBy: req.user.id } }
+    );
   }
-
-  await Cart.findOneAndDelete({ user: req.user.id })
 
   const invoice = {
     shipping: {
-      name: `${req.user.firstName} ${req.user.lastName}`,
-      address: ` ${order.address.buildingNumber} ${order.address.street},${order.address.state}`,
+      name: `${user.firstName} ${user.lastName}`,
+      address: `${order.address.buildingNumber} ${order.address.street}, ${order.address.state}`,
       city: order.address.city,
       state: order.address.state,
-      country: "Egypt",
+      country: order.address.country,
       postal_code: order.address.zipCode
     },
-    items: order.products,
+    items: order.products.map(product => ({
+      title: product.title,
+      quantity: product.quantity,
+      price: product.price
+    })),
     subtotal: order.totalPrice,
-    paid: order.totalPriceAfterDiscount,
-    invoice_nr: order._id,
+    paid: totalPriceAfterDiscount,
+    invoice_nr: order._id.toString(),
     date: order.createdAt,
-    discount: order.discount || 0
+    discount
   };
 
-  createInvoice(invoice, "invoice.pdf");
-  await sendEmail(req.user.email, "Order Placed", `<p>Your Order details</p>`, [
-    {
-      path: "invoice.pdf",
-      contentType: "application/pdf"
-    }
-  ])
-  return res.status(201).json({ message: "Order created successfully", order })
-})
+  const invoiceBuffer = await createInvoice(invoice);
+  const invoicePath = `uploads/invoices/invoice_${order._id}.pdf`;
+
+  await fs.promises.writeFile(invoicePath, invoiceBuffer);
+
+  const cloudinaryResponse = await cloudinary.uploader.upload(invoicePath, {
+    folder: `Ecommerce/Orders/`,
+    public_id: `order_${order._id}`
+  });
+
+  const orderReceipt = new OrderReceipt({
+    order: order._id,
+    receiptPdfUrl: cloudinaryResponse.secure_url,
+    status: {
+      isDelivered: order.isDelivered,
+      isPaid: order.isPaid
+    },
+    paymentMethod: order.paymentMethod
+  });
+
+  await orderReceipt.save();
+
+
+  const attachment = [{ path: invoicePath, contentType: "application/pdf" }]
+  try {
+    const emailSubject = 'Order Details';
+    const emailHtml = `<p>Your order has been placed successfully. Please find the details attached.</p>`;
+    await sendEmail(user.email, emailSubject, emailHtml, attachment);
+  } catch (error) {
+    console.error('Email send error:', error);
+    return next(new AppError('Failed to send order details. Please try again later.', 500));
+  }
+
+  await fs.promises.unlink(invoicePath);
+
+  await Cart.findOneAndDelete({ user: req.user.id });
+
+  return res.status(201).json({
+    status: "success",
+    message: "Order created successfully",
+    order,
+    receiptUrl: orderReceipt.receiptPdfUrl
+  });
+});
+
+
+
+
+
+
+
 
 //* ============================= Checkout Session =============================
 

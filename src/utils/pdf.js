@@ -1,29 +1,36 @@
-import fs from "fs";
-import path from "path"
 import PDFDocument from "pdfkit";
 
-export function createInvoice(invoice, path) {
-  let doc = new PDFDocument({ size: "A4", margin: 50 });
+export function createInvoice(invoice) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: "A4", margin: 50 });
 
-  generateHeader(doc);
-  generateCustomerInformation(doc, invoice);
-  generateInvoiceTable(doc, invoice);
-  generateFooter(doc);
+    let chunks = [];
+    doc.on("data", (chunk) => chunks.push(chunk));
+    doc.on("end", () => {
+      resolve(Buffer.concat(chunks));
+    });
+    doc.on("error", (err) => {
+      reject(err);
+    });
 
-  doc.end();
-  doc.pipe(fs.createWriteStream(path));
+    generateHeader(doc);
+    generateCustomerInformation(doc, invoice);
+    generateInvoiceTable(doc, invoice);
+    generateFooter(doc);
+
+    doc.end();
+  });
 }
 
 function generateHeader(doc) {
   doc
-    .image(path.resolve('Image 00.56.27_d83fb77c.jpg'), 50, 45, { width: 50 })
     .fillColor("#444444")
     .fontSize(20)
-    .text("Ahmed's Ecommerce.", 110, 57)
+    .text("Turki's Ecommerce shponeee.", 110, 57)
     .fontSize(10)
-    .text("Ahmed khalil.", 200, 50, { align: "right" })
-    .text("11 Mohammed Ali", 200, 65, { align: "right" })
-    .text("Alexandria, EG, 10025", 200, 80, { align: "right" })
+    .text("Ahmed Tukri.", 200, 50, { align: "right" })
+    .text("Abu hommos", 200, 65, { align: "right" })
+    .text("beheira, EG, 10025", 200, 80, { align: "right" })
     .moveDown();
 }
 
@@ -51,19 +58,13 @@ function generateCustomerInformation(doc, invoice) {
       150,
       customerInformationTop + 30
     )
-
     .font("Helvetica-Bold")
     .text(invoice.shipping.name, 300, customerInformationTop)
     .font("Helvetica")
     .text(invoice.shipping.address, 300, customerInformationTop + 15)
     .text(
-      invoice.shipping.city +
-      ", " +
-      invoice.shipping.state +
-      ", " +
-      invoice.shipping.country,
-      300,
-      customerInformationTop + 30
+      `${invoice.shipping.city}, ${invoice.shipping.state}, ${invoice.shipping.country}`,
+      300, customerInformationTop + 30
     )
     .moveDown();
 
@@ -93,7 +94,6 @@ function generateInvoiceTable(doc, invoice) {
       doc,
       position,
       item.title,
-
       formatCurrency(item.price * 100),
       item.quantity,
       formatCurrency(item.price * item.quantity * 100)
@@ -110,7 +110,7 @@ function generateInvoiceTable(doc, invoice) {
     "",
     "Subtotal",
     "",
-    formatCurrency(invoice.subtotal)
+    formatCurrency(invoice.subtotal * 100)
   );
 
   const paidToDatePosition = subtotalPosition + 20;
@@ -121,7 +121,7 @@ function generateInvoiceTable(doc, invoice) {
     "",
     "Price after discount",
     "",
-    formatCurrency(invoice.paid)
+    formatCurrency(invoice.paid * 100)
   );
 
   const duePosition = paidToDatePosition + 25;
@@ -149,22 +149,13 @@ function generateFooter(doc) {
     );
 }
 
-function generateTableRow(
-  doc,
-  y,
-  item,
-  description,
-  unitCost,
-  quantity,
-  lineTotal
-) {
+function generateTableRow(doc, y, item, unitCost, quantity, lineTotal) {
   doc
     .fontSize(10)
     .text(item, 50, y)
-    .text(description, 150, y)
-    .text(unitCost, 280, y, { width: 90, align: "right" })
-    .text(quantity, 370, y, { width: 90, align: "right" })
-    .text(lineTotal, 0, y, { align: "right" });
+    .text(unitCost, 150, y, { width: 90, align: "right" })
+    .text(quantity, 280, y, { width: 90, align: "right" })
+    .text(lineTotal, 370, y, { width: 90, align: "right" });
 }
 
 function generateHr(doc, y) {
@@ -181,9 +172,10 @@ function formatCurrency(cents) {
 }
 
 function formatDate(date) {
-  const day = date.getDate();
-  const month = date.getMonth() + 1;
-  const year = date.getFullYear();
+  const d = new Date(date);
+  const month = `${d.getMonth() + 1}`.padStart(2, '0');
+  const day = `${d.getDate()}`.padStart(2, '0');
+  const year = d.getFullYear();
 
-  return year + "/" + month + "/" + day;
+  return `${month}/${day}/${year}`;
 }
