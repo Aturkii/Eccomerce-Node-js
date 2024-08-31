@@ -6,7 +6,7 @@ import { idSchema } from './../../utils/generalFields.js';
 import { validation } from './../../middleware/validationMiddleware.js';
 import * as brandValidation from "./brand.validation.js";
 import { multerHost, validFiles } from './../../middleware/multer.js';
-import { categoryId, subCategoryId } from "../subCategory/subCategory.validation.js";
+import role from "../../utils/systemRoles.js";
 
 
 const router = Router()
@@ -18,7 +18,7 @@ router.post(
   authMiddleware(),
   validation(brandValidation.paramsValidationSchema, 'params'),
   validation(brandValidation.createBrandSchema),
-  authorizeRoles('admin', 'superadmin', 'administrator'),
+  authorizeRoles(role.admin, role.superadmin, role.administrator),
   brandController.createBrand
 );
 
@@ -29,7 +29,7 @@ router.put(
   authMiddleware(),
   validation(idSchema, 'params'),
   validation(brandValidation.updateBrandNameSchema),
-  authorizeRoles('admin', 'superadmin', 'administrator'),
+  authorizeRoles(role.admin, role.superadmin, role.administrator),
   brandController.updateBrand
 );
 
@@ -39,7 +39,7 @@ router.post(
   authMiddleware(),
   validation(idSchema, 'params'),
   validation(brandValidation.paramsValidationSchema),
-  authorizeRoles('admin', 'superadmin', 'administrator'),
+  authorizeRoles(role.admin, role.superadmin, role.administrator),
   brandController.deleteBrand
 );
 

@@ -6,6 +6,7 @@ import { checkUserExists } from './../../middleware/isExisting.js';
 import authMiddleware from "../../middleware/authMiddleware.js";
 import authorizeRoles from "../../middleware/auth.roles.js";
 import { idSchema } from './../../utils/generalFields.js';
+import role from "../../utils/systemRoles.js";
 
 const router = Router()
 
@@ -42,7 +43,7 @@ router.post(
 router.put(
   '/UpdateUserData',
   authMiddleware(),
-  authorizeRoles('user'),
+  authorizeRoles(role.user),
   validation(userSchema.updateUserSchema),
   userContoller.updateUserData
 );
@@ -51,7 +52,7 @@ router.put(
 router.patch(
   '/UpdateUserEmail',
   authMiddleware(),
-  authorizeRoles('user'),
+  authorizeRoles(role.user),
   validation(userSchema.emailShcema),
   userContoller.updateUserEmail
 );
@@ -60,7 +61,7 @@ router.patch(
 router.patch(
   '/passwrod/UpdateUserPassword',
   authMiddleware(),
-  authorizeRoles('user'),
+  authorizeRoles(role.user),
   validation(userSchema.updatePasswordSchema),
   userContoller.updateUserPassword
 );
@@ -83,7 +84,7 @@ router.post(
 router.get(
   '/user',
   authMiddleware(),
-  authorizeRoles('user', 'admin', 'superadmin', 'administrator'),
+  authorizeRoles(role.admin, role.superadmin, role.administrator, role.user),
   userContoller.getUserData
 );
 
@@ -91,7 +92,7 @@ router.get(
 router.post(
   '/specific-user/:id',
   authMiddleware(),
-  authorizeRoles('administrator', 'admin', 'superadmin'),
+  authorizeRoles(role.admin, role.superadmin, role.administrator),
   validation(idSchema, 'params'),
   userContoller.getSUserData
 );
@@ -100,7 +101,7 @@ router.post(
 router.get(
   '/all/users',
   authMiddleware(),
-  authorizeRoles('admin', 'superadmin', 'administrator'),
+  authorizeRoles(role.admin, role.superadmin, role.administrator),
   userContoller.getAllUsers
 );
 
@@ -108,7 +109,7 @@ router.get(
 router.get(
   '/blockUser/:id',
   authMiddleware(),
-  authorizeRoles('admin', 'superadmin', 'administrator'),
+  authorizeRoles(role.admin, role.superadmin, role.administrator),
   validation(idSchema, 'params'),
   userContoller.blockUser
 );
@@ -117,7 +118,7 @@ router.get(
 router.delete(
   '/delete-user/:id?',
   authMiddleware(),
-  authorizeRoles('administrator', 'admin', 'superadmin'),
+  authorizeRoles(role.admin, role.superadmin, role.administrator),
   userContoller.deleteUser
 );
 

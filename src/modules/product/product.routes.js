@@ -6,13 +6,14 @@ import { idSchema } from './../../utils/generalFields.js';
 import { validation } from './../../middleware/validationMiddleware.js';
 import * as productValidation from "./product.validation.js";
 import { multerHost, validFiles } from './../../middleware/multer.js';
+import role from "../../utils/systemRoles.js";
 const router = Router()
 
 //& Add Product 
 router.post('/add-product',
   authMiddleware(),
   multerHost(validFiles.image).fields([{ name: "image", maxCount: 1 }, { name: "coverImages", maxCount: 3 }]),
-  authorizeRoles('admin', 'superadmin', 'administrator'),
+  authorizeRoles(role.admin, role.superadmin, role.administrator),
   validation(productValidation.addProductSchema),
   ProducController.addProduct)
 
@@ -20,7 +21,7 @@ router.post('/add-product',
 router.put('/update-product/:id',
   authMiddleware(),
   multerHost(validFiles.image).fields([{ name: "image", maxCount: 1 }, { name: "coverImages", maxCount: 3 }]),
-  authorizeRoles('admin', 'superadmin', 'administrator'),
+  authorizeRoles(role.admin, role.superadmin, role.administrator),
   validation(productValidation.updateProductSchema),
   validation(idSchema, 'params'),
   ProducController.updateProduct)
@@ -28,7 +29,7 @@ router.put('/update-product/:id',
 //& Delete Product 
 router.post('/delete-product/:id',
   authMiddleware(),
-  authorizeRoles('admin', 'superadmin', 'administrator'),
+  authorizeRoles(role.admin, role.superadmin, role.administrator),
   validation(idSchema, 'params'),
   validation(productValidation.deleteProductIdSchema),
   ProducController.deleteProduct)

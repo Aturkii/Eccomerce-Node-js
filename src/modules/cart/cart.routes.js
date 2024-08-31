@@ -5,13 +5,14 @@ import { validation } from './../../middleware/validationMiddleware.js';
 import { idSchema } from './../../utils/generalFields.js';
 import * as cartController from "./cart.controller.js";
 import { addToCartSchema, coupon, quantity } from "./cart.validation.js";
+import role from "../../utils/systemRoles.js";
 
 const router = Router()
 
 //& Add to cart
 router.post('/add-to-cart',
   authMiddleware(),
-  authorizeRoles('user'),
+  authorizeRoles(role.user),
   validation(addToCartSchema),
   cartController.addToCart
 )
@@ -19,7 +20,7 @@ router.post('/add-to-cart',
 //& Update cart Quantity
 router.put('/update-cart-quantity/:id',
   authMiddleware(),
-  authorizeRoles('user'),
+  authorizeRoles(role.user),
   validation(quantity),
   validation(idSchema, 'params'),
   cartController.updateQuantity
@@ -28,7 +29,7 @@ router.put('/update-cart-quantity/:id',
 //& Remove cart item
 router.delete('/remove-cart-item/:id',
   authMiddleware(),
-  authorizeRoles('user'),
+  authorizeRoles(role.user),
   validation(idSchema, 'params'),
   cartController.removeItem
 )
@@ -36,14 +37,14 @@ router.delete('/remove-cart-item/:id',
 //& Get user cart
 router.get('/',
   authMiddleware(),
-  authorizeRoles('user'),
+  authorizeRoles(role.user),
   cartController.getUserCart
 )
 
 //& Clear cart
 router.delete('/clear-cart',
   authMiddleware(),
-  authorizeRoles('user'),
+  authorizeRoles(role.user),
   cartController.clearCart
 )
 
@@ -51,7 +52,7 @@ router.delete('/clear-cart',
 router.post('/apply-coupon',
   authMiddleware(),
   validation(coupon),
-  authorizeRoles('admin', 'superadmin', 'administrator', 'user'),
+  authorizeRoles(role.admin, role.superadmin, role.administrator,role.user),
   cartController.applyCoupon
 )
 

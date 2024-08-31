@@ -116,7 +116,6 @@ export const deleteCategory = asyncHandler(async (req, res, next) => {
 
   await Product.deleteMany({ category: id });
   await SubCategory.deleteMany({ category: category._id });
-
   await Category.deleteOne({ _id: category._id });
 
   return res.status(200).json({ status: "success", message: "Category deleted successfully" });

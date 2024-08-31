@@ -7,7 +7,15 @@ import { sendEmail } from './../../service/sendEmail.js';
 import { generateOTP } from '../../utils/generateOTP.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import Product from './../../../db/models/product/product.mode.js';
+import Brand from './../../../db/models/brand/brand.model.js';
+import Cart from './../../../db/models/cart/cart.model.js';
+import WishList from './../../../db/models/wishList/wishlist.model.js';
+import { AdminApplication } from './../../../db/models/admin/admin.model.js';
+import Coupon from './../../../db/models/coupon/coupon.model.js';
+import Reviews from './../../../db/models/review/review.model.js';
 dotenv.config();
+
 
 
 //*=========================== Sign Up =====================================  
@@ -401,7 +409,6 @@ export const getAllUsers = asyncHandler(async (req, res, next) => {
 
 export const blockUser = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
-  console.log(id);
 
   const user = await User.findById(id);
 
@@ -465,6 +472,14 @@ export const deleteUser = asyncHandler(async (req, res, next) => {
   if (!user) {
     return next(new AppError('User not found.', 404));
   }
+
+  await Reviews.findByIdAndDelete({ user: userId });
+  await Coupon.findByIdAndDelete({ addedBy: userId })
+  await AdminApplication.findByIdAndDelete({ user: userId })
+  await WishList.findByIdAndDelete({ user: userId })
+  await Cart.findByIdAndDelete({ user: userId })
+  await Brand.findByIdAndDelete({ addedBy: userId })
+  await Product.findByIdAndDelete({ addedBy: userId })
 
   await User.findByIdAndDelete(userId);
 

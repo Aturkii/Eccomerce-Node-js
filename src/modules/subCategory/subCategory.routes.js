@@ -6,6 +6,7 @@ import * as subCategoryRouter from "./subCategory.controller.js";
 import * as subCategoryValidation from "./subCategory.validation.js";
 import { multerHost, validFiles } from "../../middleware/multer.js";
 import { idSchema } from './../../utils/generalFields.js';
+import role from "../../utils/systemRoles.js";
 
 const router = Router()
 
@@ -16,14 +17,14 @@ router.post('/createSubcategory/:id',
   multerHost(validFiles.image).single("image"),
   validation(idSchema, 'params'),
   validation(subCategoryValidation.createSubCategorySchema),
-  authorizeRoles('superadmin', 'administrator'),
+  authorizeRoles(role.superadmin, role.administrator),
   subCategoryRouter.createSubCategory
 )
 
 //? Update SubCategory
 router.put('/update-subcategory/:categoryId/:subCategoryId',
   authMiddleware(),
-  authorizeRoles('superadmin', 'administrator'),
+  authorizeRoles(role.superadmin, role.administrator),
   multerHost(validFiles.image).single("image"),
   validation(subCategoryValidation.updateSubCategorySchema),
   subCategoryRouter.updateSubCategory
@@ -34,7 +35,7 @@ router.delete('/delete-subcategory/:categoryId/:subCategoryId',
   authMiddleware(),
   validation(subCategoryValidation.categoryId, 'params'),
   validation(subCategoryValidation.subCategoryId, 'params'),
-  authorizeRoles('superadmin', 'administrator'),
+  authorizeRoles(role.superadmin, role.administrator),
   subCategoryRouter.deleteSubcategories
 );
 

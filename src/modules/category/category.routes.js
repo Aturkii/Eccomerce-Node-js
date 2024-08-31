@@ -6,6 +6,7 @@ import { multerHost, validFiles } from "../../middleware/multer.js";
 import { validation } from './../../middleware/validationMiddleware.js';
 import { createCategorySchema, updateCategorySchema } from "./category.validation.js";
 import { idSchema } from './../../utils/generalFields.js';
+import role from "../../utils/systemRoles.js";
 
 
 const router = Router()
@@ -15,7 +16,7 @@ router.post('/Create-category',
   multerHost(validFiles.image).single("image"),
   authMiddleware(),
   validation(createCategorySchema),
-  authorizeRoles('superadmin', 'administrator'),
+  authorizeRoles(role.superadmin, role.administrator),
   categoryController.createCategory
 )
 
@@ -23,7 +24,7 @@ router.post('/Create-category',
 router.put('/update-category/:id',
   multerHost(validFiles.image).single("image"),
   authMiddleware(),
-  authorizeRoles('superadmin', 'administrator'),
+  authorizeRoles(role.superadmin, role.administrator),
   validation(updateCategorySchema),
   validation(idSchema, 'params'),
   categoryController.updateCategory
@@ -32,7 +33,7 @@ router.put('/update-category/:id',
 //^ Delete Categories 
 router.delete('/delete-category/:id',
   authMiddleware(),
-  authorizeRoles('superadmin', 'administrator'),
+  authorizeRoles(role.superadmin, role.administrator),
   validation(idSchema, 'params'),
   categoryController.deleteCategory
 )

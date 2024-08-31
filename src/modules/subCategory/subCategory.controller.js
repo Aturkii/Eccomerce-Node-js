@@ -7,6 +7,7 @@ import { asyncHandler } from './../../utils/asyncHandler.js';
 import SubCategory from './../../../db/models/subCategory/subCategory.moel.js';
 import Category from './../../../db/models/category/category.model.js';
 import { apiFeatures } from './../../utils/apiFeatures.js';
+import Brand from './../../../db/models/brand/brand.model.js';
 
 
 //* ___________________________ Create subCategory _____________________________________
@@ -130,7 +131,6 @@ export const deleteSubcategories = asyncHandler(async (req, res, next) => {
 
   const folderPath = `Ecommerce/categories/${category.customId}/subCategories/${subCategory.customId}`;
 
-  console.log(`Attempting to delete resources at path: ${folderPath}`);
 
   try {
     const { resources } = await cloudinary.api.resources({
@@ -138,39 +138,30 @@ export const deleteSubcategories = asyncHandler(async (req, res, next) => {
       prefix: folderPath
     });
 
-    console.log('Resources found:', resources);
-
     if (resources.length > 0) {
       const deleteResourcesResponse = await cloudinary.api.delete_resources_by_prefix(folderPath);
-      console.log('Cloudinary delete_resources_by_prefix response:', deleteResourcesResponse);
-
       if (deleteResourcesResponse.deleted_counts === 0) {
-        console.log('No resources were deleted.');
       }
     } else {
-      console.log('No resources found at the specified path.');
     }
 
     if (resources.length > 0) {
       await cloudinary.api.delete_folder(folderPath);
-      console.log(`Folder ${folderPath} deleted successfully.`);
     }
   } catch (cloudinaryError) {
-    console.error('Failed to delete resources from Cloudinary:', cloudinaryError.message);
     return next(new AppError("Failed to delete image from Cloudinary", 500));
   }
 
   try {
     await Product.deleteMany({ subCategory: subCategoryId });
+    await Brand.deleteMany({ subCategory: subCategoryId });
   } catch (error) {
-    console.error('Failed to delete products:', error.message);
     return next(new AppError("Failed to delete products associated with this subcategory", 500));
   }
 
   try {
     await SubCategory.deleteOne({ _id: subCategory._id });
   } catch (error) {
-    console.error('Failed to delete subcategory:', error.message);
     return next(new AppError("Failed to delete subcategory", 500));
   }
 

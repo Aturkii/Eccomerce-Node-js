@@ -1,7 +1,6 @@
-
 import Reviews from '../../../db/models/review/review.model.js';
 import Product from './../../../db/models/product/product.mode.js';
-import { asyncHandler } from './../../utils/asyncHandler';
+import { asyncHandler } from './../../utils/asyncHandler.js';
 import { AppError } from './../../utils/errorClass.js';
 import Order from './../../../db/models/order/order.model.js';
 import { apiFeatures } from './../../utils/apiFeatures.js';

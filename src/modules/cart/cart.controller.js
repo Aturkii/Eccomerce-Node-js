@@ -166,7 +166,6 @@ export const clearCart = asyncHandler(async (req, res, next) => {
 
 export const applyCoupon = asyncHandler(async (req, res, next) => {
     const { coupon } = req.body;
-    console.log(coupon);
 
     const couponExist = await Coupon.findOne({ code: coupon.toLowerCase() });
     if (!couponExist) {

@@ -8,6 +8,7 @@ import SubCategory from './../../../db/models/subCategory/subCategory.moel.js';
 import Category from './../../../db/models/category/category.model.js';
 import Brand from './../../../db/models/brand/brand.model.js';
 import Product from './../../../db/models/product/product.mode.js';
+import Reviews from "../../../db/models/review/review.model.js";
 
 
 //* ============================== Create Product ======================================
@@ -210,7 +211,7 @@ export const deleteProduct = asyncHandler(async (req, res, next) => {
     await cloudinary.api.delete_folder(productFolder);
 
     await Product.deleteOne({ _id: id });
-
+    await Reviews.deleteMany({ product: id })
     return res.status(200).json({
       status: "success",
       message: "Product deleted successfully"

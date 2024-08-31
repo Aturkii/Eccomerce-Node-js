@@ -5,13 +5,14 @@ import authorizeRoles from './../../middleware/auth.roles.js';
 import { idSchema } from './../../utils/generalFields.js';
 import * as couponValidation from "./coupon.validation.js";
 import { validation } from './../../middleware/validationMiddleware.js';
+import role from "../../utils/systemRoles.js";
 
 const router = Router()
 
 //^ Create Coupon 
 router.post('/create-coupon',
   authMiddleware(),
-  authorizeRoles('admin', 'superadmin', 'administrator'),
+  authorizeRoles(role.admin, role.superadmin, role.administrator),
   validation(couponValidation.createCouponSchema),
   couponController.addCoupon
 )
@@ -19,7 +20,7 @@ router.post('/create-coupon',
 //^ Create Coupon 
 router.put('/update-coupon/:id',
   authMiddleware(),
-  authorizeRoles('admin', 'superadmin', 'administrator'),
+  authorizeRoles(role.admin, role.superadmin, role.administrator),
   validation(couponValidation.updateCouponSchema),
   validation(idSchema, 'params'),
   couponController.updateCoupon
@@ -28,7 +29,7 @@ router.put('/update-coupon/:id',
 //^ Delete Coupon 
 router.delete('/delete-coupon/:id',
   authMiddleware(),
-  authorizeRoles('admin', 'superadmin', 'administrator'),
+  authorizeRoles(role.admin, role.superadmin, role.administrator),
   validation(idSchema, 'params'),
   couponController.deleteCoupon
 )
@@ -36,7 +37,7 @@ router.delete('/delete-coupon/:id',
 //^ Get all Coupons 
 router.get('/',
   authMiddleware(),
-  authorizeRoles('admin', 'superadmin', 'administrator'),
+  authorizeRoles(role.admin, role.superadmin, role.administrator),
   couponController.getAllCoupons
 )
 
