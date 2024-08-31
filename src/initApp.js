@@ -40,9 +40,9 @@ export const initApp = (app, express) => {
   app.use('/wishlist', routers.wishlistRouter)
   app.use('/admin', routers.adminRouter)
   app.use('/brands', routers.brandRouter)
-  app.use('*', (req, res, next) => {
-    res.status(400).json('Invalid URL')
-  })
+  // app.use('*', (req, res, next) => {
+  //   res.status(400).json('Invalid URL')
+  // })
 
 
   connectDB()
