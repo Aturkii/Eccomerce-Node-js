@@ -88,7 +88,6 @@ export const createOrder = asyncHandler(async (req, res, next) => {
       callback
     );
 
-    // Convert buffer to stream and pipe it
     stream.end(buffer);
   };
 
@@ -142,120 +141,170 @@ export const createOrder = asyncHandler(async (req, res, next) => {
   });
 });
 
-
-
-
-
-
-
 //* ============================= Checkout Session =============================
 
-export const createCheckOutSession = asyncHandler(async (req, res, next) => {
-  const { address } = req.body
-  const cart = await Cart.findOne({ user: req.user.id })
-  if (!cart) return next(new AppError('Cart is empty', 400))
-  let totalPriceAfterDiscount = cart.totalPriceAfterDiscount || cart.totalPrice
-  const session = await stripe.checkout.sessions.create({
-    line_items: [
-      {
-        price_data: {
-          currency: 'egp',
-          unit_amount: totalPriceAfterDiscount * 100,
-          product_data: {
-            name: `${req.user.firstName} ${req.user.lastName}`
-          }
+export const CheckOutSession = asyncHandler(async (req, res, next) => {
+  const { address } = req.body;
+  const user = await User.findById({ _id: req.user.id });
+  const cart = await Cart.findOne({ user: req.user.id });
+  if (!user) {
+    return next(new AppError('User Not Found', 400));
+  }
+
+  if (!cart) {
+    return next(new AppError('Cart is empty', 400));
+  }
+
+  const totalPriceAfterDiscount = cart.totalPriceAfterDiscount || cart.totalPrice;
+
+    const session = await stripe.checkout.sessions.create({
+      line_items: [
+        {
+          price_data: {
+            currency: 'egp',
+            unit_amount: Math.round(totalPriceAfterDiscount * 100),
+            product_data: {
+              name: `${user.firstName} ${user.lastName}`,
+            },
+          },
+          quantity: 1,
         },
-        quantity: 1,
+      ],
+      mode: 'payment',
+      payment_method_types: ['card'],
+      success_url: `${req.protocol}://${req.headers.host}/orders`,
+      cancel_url: `${req.protocol}://${req.headers.host}/cart`,
+      customer_email: req.user.email,
+      client_reference_id: cart._id.toString(),
+      metadata: {
+        address: JSON.stringify(address),
       },
-    ],
-    mode: 'payment',
-    payment_method_types: ["card"],
-    success_url: `${req.protocol}://${req.headers.host}/orders`,
-    cancel_url: `${req.protocol}://${req.headers.host}/cart`,
-    customer_email: req.user.email,
-    client_reference_id: cart._id.toString(),
-    metadata: address
+    });
 
-  });
+    return res.status(200).json({
+      status: "success",
+      message: "You checkedout successfully",
+      session
+    });
 
-  return res.status(200).json({ msg: "Success", session })
-
-})
+});
 
 //* ============================= Web Hook =====================================
 
-export const createWebHook = asyncHandler(async (req, res, next) => {
+export const stripeWebhook = asyncHandler(async (req, res, next) => {
   const sig = req.headers['stripe-signature'];
-  let event, checkoutSessionCompleted;
+
+  let event;
 
   try {
-    event = stripe.webhooks.constructEvent(req.body, sig, process.env.endpointSecret);
+    const buf = await buffer(req);
+    event = stripeClient.webhooks.constructEvent(buf, sig, process.env.STRIPE_WEBHOOK_SECRET);
   } catch (err) {
-    return res.status(400).send(`Webhook Error: ${err.message}`);
+    return next(new AppError(`Webhook Error: ${err.message}`, 400));
   }
 
-  if (event.type === "checkout.session.completed") {
-    checkoutSessionCompleted = event.data.object;
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object;
+    
+    // Retrieve user and cart info
+    const user = await User.findOne({ email: session.customer_email });
+    const cart = await Cart.findById(session.client_reference_id);
 
-    const user = await userModel.findOne({ email: checkoutSessionCompleted.customer_email });
-    const cart = await Cart.findById(checkoutSessionCompleted.client_reference_id);
-    if (!cart) return next(new AppError('Cart is empty', 400));
+    if (!user || !cart) {
+      return next(new AppError('User or Cart not found', 404));
+    }
 
+    // Create the order
     const order = new Order({
       user: user._id,
       products: cart.products,
-      address: checkoutSessionCompleted.metadata,
+      address: JSON.parse(session.metadata.address),
       totalPrice: cart.totalPrice,
-      discount: cart.discount || "",
-      totalPriceAfterDiscount: checkoutSessionCompleted.amount_total / 100,
+      discount: cart.discount || 0,
+      totalPriceAfterDiscount: cart.totalPriceAfterDiscount || cart.totalPrice,
       coupon: cart.coupon,
-      paymentMethod: "card",
       isPlaced: true,
+      paymentMethod: 'Stripe',
       isPaid: true,
+      paidAt: new Date()
     });
 
     await order.save();
-    req.data = { model: Order, id: order._id };
 
-    for (const product of order.products) {
-      await Product.findByIdAndUpdate(product.productId, { $inc: { stock: -product.quantity } });
+    // Update product stock
+    await Promise.all(order.products.map(async (product) => {
+      await Product.findByIdAndUpdate(product.productId, {
+        $inc: { stock: -product.quantity }
+      });
+    }));
+
+    // Generate the invoice
+    const invoiceData = {
+      shipping: {
+        name: `${user.firstName} ${user.lastName}`,
+        address: `${order.address.buildingNumber} ${order.address.street}, ${order.address.state}`,
+        city: order.address.city,
+        state: order.address.state,
+        country: order.address.country,
+        postal_code: order.address.zipCode
+      },
+      items: order.products.map(product => ({
+        title: product.title,
+        quantity: product.quantity,
+        price: product.price
+      })),
+      subtotal: order.totalPrice,
+      paid: order.totalPriceAfterDiscount,
+      invoice_nr: order._id.toString(),
+      date: order.createdAt,
+      discount: order.discount
+    };
+
+    const invoiceBuffer = await createInvoice(invoiceData);
+
+    // Upload invoice to Cloudinary
+    let result;
+    try {
+      result = await cloudinary.uploader.upload_stream({
+        resource_type: "raw",
+        folder: `Ecommerce/Orders/`,
+        public_id: `order_${order._id}`
+      }).end(invoiceBuffer);
+    } catch (error) {
+      return next(new AppError("Failed to upload invoice to Cloudinary", 500));
     }
 
-    if (cart.coupon) {
-      await Coupon.findOneAndUpdate({ code: cart.coupon }, { $push: { usedBy: user._id } });
+    // Save OrderReceipt in the database
+    const orderReceipt = new OrderReceipt({
+      order: order._id,
+      receiptPdfUrl: result.secure_url,
+      status: {
+        isDelivered: order.isDelivered,
+        isPaid: order.isPaid
+      },
+      paymentMethod: order.paymentMethod
+    });
+
+    await orderReceipt.save();
+
+    // Optionally, send the invoice via email (if you want)
+    const attachment = [{ content: invoiceBuffer, filename: `invoice_${order._id}.pdf`, contentType: "application/pdf" }];
+    try {
+      const emailSubject = 'Your Order Receipt';
+      const emailHtml = `<p>Thank you for your purchase! Please find your invoice attached.</p>`;
+      await sendEmail(user.email, emailSubject, emailHtml, attachment);
+    } catch (error) {
+      console.error('Email send error:', error);
     }
 
-    await Cart.findByIdAndDelete(checkoutSessionCompleted.client_reference_id);
+    // Clear the cart
+    await Cart.findByIdAndDelete(session.client_reference_id);
 
-    // const invoice = {
-    //   shipping: {
-    //     name: `${user.firstName} ${user.lastName}`,
-    //     address: `${order.address.buildingNumber} ${order.address.street}, ${order.address.state}`,
-    //     city: order.address.city,
-    //     state: order.address.state,
-    //     country: "Egypt",
-    //     postal_code: order.address.zipCode,
-    //   },
-    //   items: order.products,
-    //   subtotal: order.totalPrice,
-    //   paid: order.totalPriceAfterDiscount,
-    //   invoice_nr: order._id,
-    //   date: order.createdAt,
-    //   discount: order.discount || 0,
-    // };
-
-    // createInvoice(invoice, "invoice.pdf");
-    // await sendEmail(user.email, "Order Placed", `<p>Your Order details</p>`, [
-    //   {
-    //     path: "invoice.pdf",
-    //     contentType: "application/pdf",
-    //   },
-    // ]);
-
-    return res.status(201).json({ message: "Order created successfully", order });
+    return res.status(200).json({ received: true });
+  } else {
+    return next(new AppError(`Unhandled event type ${event.type}`, 400));
   }
 });
-
 //* ============================= Get Own Order ================================
 
 export const getOwnOrders = asyncHandler(async (req, res, next) => {
