@@ -189,12 +189,6 @@ export const CheckOutSession = asyncHandler(async (req, res, next) => {
 
 });
 
-
-
-
-
-
-
 //* ============================= Web Hook =====================================
 
 export const createWebHook = asyncHandler(async (req, res, next) => {
@@ -242,6 +236,81 @@ export const createWebHook = asyncHandler(async (req, res, next) => {
       await Coupon.findOneAndUpdate({ code: cart.coupon }, { $push: { usedBy: user._id } });
     }
 
+    const invoice = {
+      shipping: {
+        name: `${user.firstName} ${user.lastName}`,
+        address: `${order.address.buildingNumber} ${order.address.street}, ${order.address.state}`,
+        city: order.address.city,
+        state: order.address.state,
+        country: order.address.country,
+        postal_code: order.address.zipCode
+      },
+      items: order.products.map(product => ({
+        title: product.title,
+        quantity: product.quantity,
+        price: product.price
+      })),
+      subtotal: order.totalPrice,
+      paid: totalPriceAfterDiscount,
+      invoice_nr: order._id.toString(),
+      date: order.createdAt,
+      discount
+    };
+
+    const invoiceBuffer = await createInvoice(invoice);
+
+    const uploadInvoiceToCloudinary = (buffer, orderId, callback) => {
+      const stream = cloudinary.uploader.upload_stream(
+        {
+          folder: `Ecommerce/Orders/`,
+          public_id: `order_${orderId}`
+        },
+        callback
+      );
+
+      stream.end(buffer);
+    };
+
+    let cloudinaryResponse;
+    try {
+      cloudinaryResponse = await new Promise((resolve, reject) => {
+        uploadInvoiceToCloudinary(invoiceBuffer, order._id, (error, result) => {
+          if (error) {
+            return reject(new AppError('Failed to upload invoice to Cloudinary', 500));
+          }
+          resolve(result);
+        });
+      });
+
+      if (!cloudinaryResponse || !cloudinaryResponse.secure_url) {
+        throw new AppError('Failed to retrieve Cloudinary response', 500);
+      }
+    } catch (error) {
+      return next(error);
+    }
+
+    const orderReceipt = new OrderReceipt({
+      order: order._id,
+      receiptPdfUrl: cloudinaryResponse.secure_url,
+      status: {
+        isDelivered: order.isDelivered,
+        isPaid: order.isPaid
+      },
+      paymentMethod: order.paymentMethod
+    });
+
+    await orderReceipt.save();
+
+    const attachment = [{ content: invoiceBuffer, filename: `invoice_${order._id}.pdf`, contentType: "application/pdf" }];
+    try {
+      const emailSubject = 'Order Details';
+      const emailHtml = `<p>Your order has been placed successfully. Please find the details attached.</p>`;
+      await sendEmail(user.email, emailSubject, emailHtml, attachment);
+    } catch (error) {
+      console.error('Email send error:', error);
+      return next(new AppError('Failed to send order details. Please try again later.', 500));
+    }
+
     await Cart.findByIdAndDelete(checkoutSessionCompleted.client_reference_id);
 
     return res.status(201).json({
@@ -252,20 +321,6 @@ export const createWebHook = asyncHandler(async (req, res, next) => {
     return res.status(400).send(`Unhandled event type ${event.type}`);
   }
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 //* ============================= Get Own Order ================================
 
