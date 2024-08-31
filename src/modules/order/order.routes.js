@@ -30,7 +30,7 @@ router.post('/checkout',
 //? Web hook   
 router.post('/webhook',
   express.raw({ type: 'application/json' }),
-  orderController.stripeWebhook)
+  orderController.createWebHook)
 
 
 export default router;

@@ -157,154 +157,116 @@ export const CheckOutSession = asyncHandler(async (req, res, next) => {
 
   const totalPriceAfterDiscount = cart.totalPriceAfterDiscount || cart.totalPrice;
 
-    const session = await stripe.checkout.sessions.create({
-      line_items: [
-        {
-          price_data: {
-            currency: 'egp',
-            unit_amount: Math.round(totalPriceAfterDiscount * 100),
-            product_data: {
-              name: `${user.firstName} ${user.lastName}`,
-            },
+  const session = await stripe.checkout.sessions.create({
+    line_items: [
+      {
+        price_data: {
+          currency: 'egp',
+          unit_amount: Math.round(totalPriceAfterDiscount * 100),
+          product_data: {
+            name: `${user.firstName} ${user.lastName}`,
           },
-          quantity: 1,
         },
-      ],
-      mode: 'payment',
-      payment_method_types: ['card'],
-      success_url: `${req.protocol}://${req.headers.host}/orders`,
-      cancel_url: `${req.protocol}://${req.headers.host}/cart`,
-      customer_email: req.user.email,
-      client_reference_id: cart._id.toString(),
-      metadata: {
-        address: JSON.stringify(address),
+        quantity: 1,
       },
-    });
+    ],
+    mode: 'payment',
+    payment_method_types: ['card'],
+    success_url: `${req.protocol}://${req.headers.host}/orders`,
+    cancel_url: `${req.protocol}://${req.headers.host}/cart`,
+    customer_email: req.user.email,
+    client_reference_id: cart._id.toString(),
+    metadata: {
+      address: JSON.stringify(address),
+    },
+  });
 
-    return res.status(200).json({
-      status: "success",
-      message: "You checkedout successfully",
-      session
-    });
+  return res.status(200).json({
+    status: "success",
+    message: "You checkedout successfully",
+    session
+  });
 
 });
 
+
+
+
+
+
+
 //* ============================= Web Hook =====================================
 
-export const stripeWebhook = asyncHandler(async (req, res, next) => {
+export const createWebHook = asyncHandler(async (req, res, next) => {
   const sig = req.headers['stripe-signature'];
-
   let event;
 
   try {
-    const buf = await buffer(req);
-    event = stripeClient.webhooks.constructEvent(buf, sig, process.env.STRIPE_WEBHOOK_SECRET);
+    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
   } catch (err) {
-    return next(new AppError(`Webhook Error: ${err.message}`, 400));
+    return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  if (event.type === 'checkout.session.completed') {
-    const session = event.data.object;
-    
-    // Retrieve user and cart info
-    const user = await User.findOne({ email: session.customer_email });
-    const cart = await Cart.findById(session.client_reference_id);
+  if (event.type === "checkout.session.completed") {
+    const checkoutSessionCompleted = event.data.object;
 
-    if (!user || !cart) {
-      return next(new AppError('User or Cart not found', 404));
-    }
+    const user = await User.findOne({ email: checkoutSessionCompleted.customer_email });
+    const cart = await Cart.findById(checkoutSessionCompleted.client_reference_id);
 
-    // Create the order
+    if (!user) return next(new AppError('User not found', 404));
+    if (!cart) return next(new AppError('Cart not found', 404));
+
     const order = new Order({
       user: user._id,
       products: cart.products,
-      address: JSON.parse(session.metadata.address),
+      address: JSON.parse(checkoutSessionCompleted.metadata.address),
       totalPrice: cart.totalPrice,
       discount: cart.discount || 0,
-      totalPriceAfterDiscount: cart.totalPriceAfterDiscount || cart.totalPrice,
+      totalPriceAfterDiscount: checkoutSessionCompleted.amount_total / 100,
       coupon: cart.coupon,
+      paymentMethod: "card",
       isPlaced: true,
-      paymentMethod: 'Stripe',
       isPaid: true,
-      paidAt: new Date()
+      paidAt: Date.now(),
     });
 
     await order.save();
 
-    // Update product stock
     await Promise.all(order.products.map(async (product) => {
       await Product.findByIdAndUpdate(product.productId, {
         $inc: { stock: -product.quantity }
       });
     }));
 
-    // Generate the invoice
-    const invoiceData = {
-      shipping: {
-        name: `${user.firstName} ${user.lastName}`,
-        address: `${order.address.buildingNumber} ${order.address.street}, ${order.address.state}`,
-        city: order.address.city,
-        state: order.address.state,
-        country: order.address.country,
-        postal_code: order.address.zipCode
-      },
-      items: order.products.map(product => ({
-        title: product.title,
-        quantity: product.quantity,
-        price: product.price
-      })),
-      subtotal: order.totalPrice,
-      paid: order.totalPriceAfterDiscount,
-      invoice_nr: order._id.toString(),
-      date: order.createdAt,
-      discount: order.discount
-    };
-
-    const invoiceBuffer = await createInvoice(invoiceData);
-
-    // Upload invoice to Cloudinary
-    let result;
-    try {
-      result = await cloudinary.uploader.upload_stream({
-        resource_type: "raw",
-        folder: `Ecommerce/Orders/`,
-        public_id: `order_${order._id}`
-      }).end(invoiceBuffer);
-    } catch (error) {
-      return next(new AppError("Failed to upload invoice to Cloudinary", 500));
+    if (cart.coupon) {
+      await Coupon.findOneAndUpdate({ code: cart.coupon }, { $push: { usedBy: user._id } });
     }
 
-    // Save OrderReceipt in the database
-    const orderReceipt = new OrderReceipt({
-      order: order._id,
-      receiptPdfUrl: result.secure_url,
-      status: {
-        isDelivered: order.isDelivered,
-        isPaid: order.isPaid
-      },
-      paymentMethod: order.paymentMethod
+    await Cart.findByIdAndDelete(checkoutSessionCompleted.client_reference_id);
+
+    return res.status(201).json({
+      status: 'success',
+      message: "Order created successfully", order
     });
-
-    await orderReceipt.save();
-
-    // Optionally, send the invoice via email (if you want)
-    const attachment = [{ content: invoiceBuffer, filename: `invoice_${order._id}.pdf`, contentType: "application/pdf" }];
-    try {
-      const emailSubject = 'Your Order Receipt';
-      const emailHtml = `<p>Thank you for your purchase! Please find your invoice attached.</p>`;
-      await sendEmail(user.email, emailSubject, emailHtml, attachment);
-    } catch (error) {
-      console.error('Email send error:', error);
-    }
-
-    // Clear the cart
-    await Cart.findByIdAndDelete(session.client_reference_id);
-
-    return res.status(200).json({ received: true });
   } else {
-    return next(new AppError(`Unhandled event type ${event.type}`, 400));
+    return res.status(400).send(`Unhandled event type ${event.type}`);
   }
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 //* ============================= Get Own Order ================================
 
 export const getOwnOrders = asyncHandler(async (req, res, next) => {
